@@ -25,9 +25,26 @@
     "yargs": "^17.6.2",
     "yn": "^3.1.1"
   },
+  
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build": "npm run compile && npm run build-dist",
+    "compile": "npx tsc --declaration",
+    "build-dist": "npx browserify ./build/browserify_bundle.js -o browserify/dist.js -r './browserify/patch/websocket.js:ws' -r './browserify/patch/fs.js:fs' -r './browserify/patch/dgram.js:dgram'",
+    "launch": "npm start",
+    "start": "npx ts-node src/cliApp.ts"
   },
+
   "author": "",
-  "license": "ISC"
+  "license": "ISC",
+
+  "files": [
+    "./src/app.ts",
+    "./src/configManager.ts",
+    "./src/browserify_bundle.ts",
+
+    "./build/app.js*",
+    "./build/configManager.js*",
+    "./build/browserify_bundle.js*",
+    "./browserify/"
+  ]
 }
