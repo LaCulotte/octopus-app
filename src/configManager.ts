@@ -27,8 +27,16 @@ export class ConfigManager {
     }
 
     getConfigSync() {
-        const data = fs.readFileSync(this.configPath, 'utf8');
-        return JSON.parse(data);
+        try {
+            const data = fs.readFileSync(this.configPath, 'utf8');
+            return JSON.parse(data);
+        } catch (e) {
+            if(typeof(e) != "string")
+                e = JSON.stringify(e);
+
+            console.error(`[ConfigManager] Error while getting config ${this.configPath} : ${e}`);
+            return {}
+        }
     }
 
     setConfig(config: string) {

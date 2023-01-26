@@ -4,8 +4,8 @@ import { OctopusApp } from "./app";
 class CLIApp extends OctopusApp {
     type: string = "CLI";
 
-    constructor(octopusUrl: string) {
-        super(octopusUrl);
+    constructor() {
+        super();
     }
 
     onInit(message: any) {
@@ -35,5 +35,5 @@ class CLIApp extends OctopusApp {
     }
 }
 
-let app = new CLIApp("ws://localhost:8000");
-app.connect();
+let app = new CLIApp();
+app.connect(undefined);

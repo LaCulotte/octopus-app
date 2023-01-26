@@ -1,18 +1,21 @@
 import WebSocket from "ws";
 import { v4 } from "uuid";
 import { ConfigManager } from "./configManager";
+import { createSocket, RemoteInfo, Socket } from "dgram";
 
 type ReturnValue = {
     resolve : (msg: any) => void,
     reject : (error: any) => void
 };
 
+type Callback = (message: any) => any;
+
 export class OctopusApp {
-    url: string;
+    url: string = undefined;
     type: string = undefined;
     description: string = "";
 
-    config: ConfigManager;
+    configManager: ConfigManager;
 
     websocket: WebSocket;
     connected: boolean = false;
@@ -20,17 +23,115 @@ export class OctopusApp {
     returnValues: Map<string, ReturnValue> = new Map();
     returnValuesTimeout = 5000;
 
-    constructor(octopusUrl: string, configPath: string = "./config.json", configSchemaPath: string = "./config-schema.json") {
-        this.url = octopusUrl;
-        this.config = new ConfigManager(configPath, configSchemaPath);
+    coreCallback: Map<string, Callback> = new Map();
+    directCallback: Map<string, Callback> = new Map();
+    broadcastCallback: Map<string, Callback> = new Map();
+    // pipelineCallback: Map<string, Callback> = new Map();
+
+    autoConnect = false;
+    // autoConnectTimeout = 24 * 60 * 60 * 1000 // One day
+    autoConnecTimeoutId: NodeJS.Timeout = undefined;
+    lastAutoConnectTimestamp = Date.now();
+
+    udpSocket: Socket = undefined;
+    udpPort: number = 3000;
+    exploredServers: Map<string, number> = new Map();
+    exploredServersTimeout = 30000;
+
+    constructor(configPath: string = "./config.json", configSchemaPath: string = "./config-schema.json") {
+        this.configManager = new ConfigManager(configPath, configSchemaPath);
+
+        this.configUpdated(this.configManager.getConfigSync());
     }
 
-    connect() {
+    updateConfig(config: any) {
+        if(!config)
+            return;
+
+
+        this.configManager.setConfigSync(config);
+        this.configUpdated(config);
+    }
+
+    configUpdated(config: any) {
+        if(!config)
+            return;
+        
+        if(config.broadcastPort && this.udpPort != config.broadcastPort) {
+            this.udpPort = config.broadcastPort;
+
+            this.closeUdpSocket();
+            this.openUdpSocket();
+        }
+
+        if(config.autoConnect != undefined)
+            this.autoConnect = config.autoConnect;
+    }
+
+    openUdpSocket() {
+        // Do not open udp socket if already connected or if the dgram module is fake (for webapps) 
+        if(!this.connected) {
+            console.log(`[${this.logHeader}] Opening udp socket to discover StreamOctopus servers.`);
+            
+            this.udpSocket = createSocket({type: 'udp4', reuseAddr: true});
+            this.udpSocket.bind(this.udpPort);
+            this.udpSocket.on('message', this.onUdpMessage.bind(this));
+
+            if(this.autoConnecTimeoutId)
+                clearTimeout(this.autoConnecTimeoutId);
+            this.autoConnecTimeoutId = setTimeout(this.closeUdpSocket.bind(this), 24 * 60 * 60 * 1000);
+        } else {
+            console.log("Did not open udp socket because the app is already connected");
+        }
+    }
+
+    closeUdpSocket() {
+        if (this.udpSocket) {
+            this.udpSocket.close();
+            this.udpSocket = undefined;
+        }
+
+        if(this.autoConnecTimeoutId) {
+            clearTimeout(this.autoConnecTimeoutId);
+            this.autoConnecTimeoutId = undefined;
+        }
+    }
+
+    onUdpMessage(message: Buffer, remote: RemoteInfo) {
+        try {
+            let messageJson = JSON.parse(message.toString());
+            if(messageJson.type == "OctopusServerBroadcast" && messageJson.content && messageJson.content.websocket) {
+                let url = `ws://${remote.address}:${messageJson.content.websocket}`;
+
+                let now = Date.now();
+                let toDel: string[] = [];
+                for (let server of this.exploredServers) {
+                    let serverUrl = server[0]
+                    if(now - this.exploredServers.get(serverUrl) > this.exploredServersTimeout)
+                        toDel.push(serverUrl);
+                }
+
+                for (let server of toDel) 
+                    this.exploredServers.delete(server)
+
+                if (this.exploredServers.get(url)) {
+                    console.log(`Ignoring ${now - this.exploredServers.get(url)} > ${this.exploredServersTimeout}`);
+                    return;
+                }
+
+                this.exploredServers.set(url, now);
+                this.connect(url);
+            }
+        } catch(e) {
+        }
+    }
+
+    connect(url: string) {
         if(this.connected) {
             console.warn(`[${this.logHeader}] App already connected, did not reconnect.`);
             return;
         }
-            
+
         // Add a this.connecting attribute that prevents multiple connections => reset after init or after error
 
         if (this.type === undefined) {
@@ -38,10 +139,19 @@ export class OctopusApp {
             return;
         }
 
-        this.websocket = new WebSocket(this.url);
-        this.websocket.onopen = this.onOpen.bind(this);
-        this.websocket.onmessage = this.onMessage.bind(this);
-        this.websocket.onclose = this.onClose.bind(this);
+        if(url == undefined) {
+            this.openUdpSocket();
+            this.autoConnect = true;
+        } else {
+            this.closeUdpSocket();
+            
+            this.url = url;
+            this.websocket = new WebSocket(this.url);
+            this.websocket.onopen = this.onOpen.bind(this);
+            this.websocket.onmessage = this.onMessage.bind(this);
+            this.websocket.onclose = this.onClose.bind(this);
+            this.websocket.onerror = (err) => {console.log(err)};
+        }
     }
 
     // ----- Callbacks -----
@@ -55,13 +165,21 @@ export class OctopusApp {
             }
         };
 
+        // Add return value to have a timeout on the init message if the server is taking too long to respond
+        this.addReturnValue("init").then((message) => {
+            this.onInit(message)
+        }).catch((err) => {
+            console.log(`[${this.logHeader}] Could not connect to ${this.url} : ${err}`);            
+            this.onInitFailed();
+        });
+
         this.websocket.send(JSON.stringify(initMessage));
     }
 
     onInit(message: any) {
         if (this.connected) {
             console.warn(`[${this.logHeader}] Received init message while already connected.`);
-            return;
+            return false;
         }
 
         if(message.data.toUpperCase() == "OK") {
@@ -71,9 +189,17 @@ export class OctopusApp {
             return true;
         } else {
             console.log(`[${this.logHeader}] Could not connect to ${this.url} : ${message.data}`);            
+            this.onInitFailed();
 
             return false;
         }
+    }
+
+    onInitFailed() {
+        this.stop();
+
+        if(this.autoConnect)
+            this.openUdpSocket();
     }
 
     onMessage(msgEvent: WebSocket.MessageEvent) {
@@ -84,7 +210,8 @@ export class OctopusApp {
 
             switch (message.type.toLowerCase()) {
                 case "init":
-                    this.onInit(message); 
+                    // this.onInit(message);
+                    this.resolveReturnValue("init", message);
                     break;
 
                 case "core":
@@ -145,7 +272,7 @@ export class OctopusApp {
                 try {
                     this.sendDirect(message.src, {
                         success: true,
-                        configSchema: this.config.getConfigSchemaSync()
+                        configSchema: this.configManager.getConfigSchemaSync()
                     }, false, message.id);
                 } catch (e) {
                     this.sendDirect(message.src, {
@@ -159,7 +286,7 @@ export class OctopusApp {
                 try {
                     this.sendDirect(message.src, {
                         success: true,
-                        config: this.config.getConfigSync()
+                        config: this.configManager.getConfigSync()
                     }, false, message.id);
                 } catch (e) {
                     this.sendDirect(message.src, {
@@ -175,7 +302,7 @@ export class OctopusApp {
                 if(!message.content.config) {
                     console.error(`[${this.logHeader}] Got 'setConfig' message with no field 'config' in content.`);
                 } else {
-                    this.config.setConfigSync(message.content.config);
+                    this.updateConfig(message.content.config);
                 }
 
                 return true;
@@ -306,6 +433,11 @@ export class OctopusApp {
     onClose(event: WebSocket.CloseEvent) {
         console.log(`[${this.logHeader}] Connection closed (code: ${event.code}) : ${event.reason}.`);
         this.stop();
+
+        if(this.autoConnect) {
+            this.exploredServers = new Map();
+            this.openUdpSocket();
+        }
     }
 
     stop() {
@@ -314,6 +446,7 @@ export class OctopusApp {
 
         this.connected = false;
         this.websocket.close();
+        this.closeUdpSocket();
     }
 
     // ----- Utils -----
