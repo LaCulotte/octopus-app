@@ -1,4 +1,5 @@
-import fs from "fs"
+import fs from "fs";
+import { logger } from "./logger";
 
 export class ConfigManager {
     configPath: string;
@@ -34,7 +35,7 @@ export class ConfigManager {
             if(typeof(e) != "string")
                 e = JSON.stringify(e);
 
-            console.error(`[ConfigManager] Error while getting config ${this.configPath} : ${e}`);
+            logger.error(`[ConfigManager] Error while getting config ${this.configPath} : ${e}`);
             return {}
         }
     }

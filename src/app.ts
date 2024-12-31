@@ -2,6 +2,7 @@ import WebSocket from "ws";
 import { v4 } from "uuid";
 import { ConfigManager } from "./configManager";
 import { createSocket, RemoteInfo, Socket } from "dgram";
+import { logger } from "./logger";
 
 type ReturnValue = {
     resolve : (msg: any) => void,
@@ -48,7 +49,6 @@ export class OctopusApp {
         if(!config)
             return;
 
-
         this.configManager.setConfigSync(config);
         this.configUpdated(config);
     }
@@ -71,7 +71,7 @@ export class OctopusApp {
     openUdpSocket() {
         // Do not open udp socket if already connected or if the dgram module is fake (for webapps) 
         if(!this.connected) {
-            console.log(`[${this.logHeader}] Opening udp socket to discover StreamOctopus servers.`);
+            logger.info(`[${this.logHeader}] Opening udp socket to discover StreamOctopus servers.`);
             
             this.udpSocket = createSocket({type: 'udp4', reuseAddr: true});
             this.udpSocket.bind(this.udpPort);
@@ -81,7 +81,7 @@ export class OctopusApp {
                 clearTimeout(this.autoConnecTimeoutId);
             this.autoConnecTimeoutId = setTimeout(this.closeUdpSocket.bind(this), 24 * 60 * 60 * 1000);
         } else {
-            console.log("Did not open udp socket because the app is already connected");
+            logger.info("Did not open udp socket because the app is already connected");
         }
     }
 
@@ -115,7 +115,7 @@ export class OctopusApp {
                     this.exploredServers.delete(server)
 
                 if (this.exploredServers.get(url)) {
-                    console.log(`Ignoring ${now - this.exploredServers.get(url)} > ${this.exploredServersTimeout}`);
+                    logger.info(`Ignoring ${now - this.exploredServers.get(url)} > ${this.exploredServersTimeout}`);
                     return;
                 }
 
@@ -128,14 +128,14 @@ export class OctopusApp {
 
     connect(url: string) {
         if(this.connected) {
-            console.warn(`[${this.logHeader}] App already connected, did not reconnect.`);
+            logger.warn(`[${this.logHeader}] App already connected, did not reconnect.`);
             return;
         }
 
         // Add a this.connecting attribute that prevents multiple connections => reset after init or after error
 
         if (this.type === undefined) {
-            console.error(`[${this.logHeader}] Could not connect app : app's type was left undefined (${this.type}).`);
+            logger.error(`[${this.logHeader}] Could not connect app : app's type was left undefined (${this.type}).`);
             return;
         }
 
@@ -150,7 +150,7 @@ export class OctopusApp {
             this.websocket.onopen = this.onOpen.bind(this);
             this.websocket.onmessage = this.onMessage.bind(this);
             this.websocket.onclose = this.onClose.bind(this);
-            this.websocket.onerror = (err) => {console.log(err)};
+            this.websocket.onerror = (err) => {logger.info(err)};
         }
     }
 
@@ -169,7 +169,7 @@ export class OctopusApp {
         this.addReturnValue("init").then((message) => {
             this.onInit(message)
         }).catch((err) => {
-            console.log(`[${this.logHeader}] Could not connect to ${this.url} : ${err}`);            
+            logger.info(`[${this.logHeader}] Could not connect to ${this.url} : ${err}`);            
             this.onInitFailed();
         });
 
@@ -178,17 +178,17 @@ export class OctopusApp {
 
     onInit(message: any) {
         if (this.connected) {
-            console.warn(`[${this.logHeader}] Received init message while already connected.`);
+            logger.warn(`[${this.logHeader}] Received init message while already connected.`);
             return false;
         }
 
         if(message.data.toUpperCase() == "OK") {
             this.connected = true;    
-            console.log(`[${this.logHeader}] Connected to ${this.url}`);
+            logger.info(`[${this.logHeader}] Connected to ${this.url}`);
 
             return true;
         } else {
-            console.log(`[${this.logHeader}] Could not connect to ${this.url} : ${message.data}`);            
+            logger.info(`[${this.logHeader}] Could not connect to ${this.url} : ${message.data}`);            
             this.onInitFailed();
 
             return false;
@@ -204,8 +204,7 @@ export class OctopusApp {
 
     onMessage(msgEvent: WebSocket.MessageEvent) {
         try {
-            console.log("New message : ");
-            console.log(msgEvent.data.toString());
+            logger.info(`New message : ${msgEvent.data.toString()}`);
             let message = JSON.parse(msgEvent.data.toString());
 
             switch (message.type.toLowerCase()) {
@@ -227,11 +226,11 @@ export class OctopusApp {
                     break;
                 
                 default:
-                    console.error(`[${this.logHeader}] Unknown message type received : ${message.type}`);
+                    logger.error(`[${this.logHeader}] Unknown message type received : ${message.type}`);
                     break;
             }
         } catch(e) {
-            console.error(`[${this.logHeader}] Caught exception while processing incoming message : ${e}.`)
+            logger.error(`[${this.logHeader}] Caught exception while processing incoming message : ${e}.`)
         }
     }
 
@@ -300,7 +299,7 @@ export class OctopusApp {
             case "setconfig": 
                 // this.sendDirect(message.src, this.config.getConfigSync(), false, message.id);
                 if(!message.content.config) {
-                    console.error(`[${this.logHeader}] Got 'setConfig' message with no field 'config' in content.`);
+                    logger.error(`[${this.logHeader}] Got 'setConfig' message with no field 'config' in content.`);
                 } else {
                     this.updateConfig(message.content.config);
                 }
@@ -425,13 +424,13 @@ export class OctopusApp {
         if (this.connected)
             this.websocket.send(JSON.stringify(data));
         else 
-            console.error(`[${this.logHeader}] Could not send message : not connected (this.connected == false)`);
+            logger.error(`[${this.logHeader}] Could not send message : not connected (this.connected == false)`);
     }
 
     // ----- Stop functions ----
     
     onClose(event: WebSocket.CloseEvent) {
-        console.log(`[${this.logHeader}] Connection closed (code: ${event.code}) : ${event.reason}.`);
+        logger.info(`[${this.logHeader}] Connection closed (code: ${event.code}) : ${event.reason}.`);
         this.stop();
 
         if(this.autoConnect) {
