@@ -30,7 +30,7 @@
   "scripts": {
     "build": "npm run compile && npm run build-dist",
     "compile": "npx tsc --declaration",
-    "build-dist": "npx browserify ./build/browserify_bundle.js -o browserify/dist.js -r './browserify/patch/websocket.js:ws' -r './browserify/patch/fs.js:fs' -r './browserify/patch/dgram.js:dgram'",
+    "build-dist": "npx browserify ./build/browserify_bundle.js -o browserify/dist.js -r './browserify/patch/websocket.js:ws' -r './browserify/patch/fs.js:fs' -r './browserify/patch/dgram.js:dgram' -r './browserify/patch/pino.js:pino' -r './browserify/patch/pino-pretty.js:pino-pretty'",
     "launch": "npm start",
     "start": "npx ts-node src/cliApp.ts"
   },
