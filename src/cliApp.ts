@@ -1,4 +1,6 @@
-import { logger } from "./logger";
+import { logger, resetLogger } from "./logger";
+resetLogger({sync: true});
+
 import { OctopusApp } from "./app";
 import { createInterface, Interface } from "readline/promises";
 

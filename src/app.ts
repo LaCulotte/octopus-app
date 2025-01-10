@@ -266,7 +266,7 @@ export class OctopusApp {
         if (!message.content || !message.content.type)
             return false;
 
-        switch (message.content.type.toLowerCase()) {
+        switch (message.content.request.toLowerCase()) {
             case "getconfigschema":
                 try {
                     this.sendDirect(message.src, {
