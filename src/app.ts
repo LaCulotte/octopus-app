@@ -4,12 +4,12 @@ import { ConfigManager } from "./configManager";
 import { createSocket, RemoteInfo, Socket } from "dgram";
 import { logger } from "./logger";
 
-type ReturnValue = {
+export type ReturnValue = {
     resolve : (msg: any) => void,
     reject : (error: any) => void
 };
 
-type Callback = (message: any) => any;
+export type Callback = (message: any) => any;
 
 export class OctopusApp {
     url: string = undefined;
@@ -263,7 +263,7 @@ export class OctopusApp {
         if(this.resolveReturnValue(message.id, message))
             return true;
 
-        if (!message.content || !message.content.type)
+        if (!message.content || !message.content.request)
             return false;
 
         switch (message.content.request.toLowerCase()) {
@@ -294,7 +294,6 @@ export class OctopusApp {
                     }, false, message.id);
                 }
                 return true;
-                break;
 
             case "setconfig": 
                 // this.sendDirect(message.src, this.config.getConfigSync(), false, message.id);
@@ -305,10 +304,13 @@ export class OctopusApp {
                 }
 
                 return true;
-                break;
 
             default:
                 break;
+        }
+
+        if(this.directCallback.has(message.content.request)) {
+            return this.directCallback.get(message.content.request)(message);
         }
 
         return false;
@@ -334,6 +336,11 @@ export class OctopusApp {
     }
 
     onBroadcast(message: any) {
+        if (this.broadcastCallback.has(message.channel)) {
+            return this.broadcastCallback.get(message.channel)(message);
+        }
+
+        return false;
     }
 
     // ----- Util functions -----

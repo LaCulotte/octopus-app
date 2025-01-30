@@ -2,7 +2,6 @@
   "name": "octopus-app",
   "version": "1.0.0",
   "description": "",
-  "main": "./build/app.js",
   "dependencies": {
     "@types/node": "^18.11.18",
     "@types/uuid": "^9.0.0",
@@ -38,11 +37,17 @@
   "license": "ISC",
   "files": [
     "./src/app.ts",
+    "./src/logger.ts",
     "./src/configManager.ts",
     "./src/browserify_bundle.ts",
     "./build/app.js*",
+    "./build/logger.js*",
     "./build/configManager.js*",
     "./build/browserify_bundle.js*",
     "./browserify/"
-  ]
+  ],
+  "exports": {
+      ".": "./build/app.js",
+      "./logger": "./build/logger.js"
+  }
 }
