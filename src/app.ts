@@ -41,6 +41,12 @@ export class OctopusApp {
 
     constructor(configPath: string = "./config.json", configSchemaPath: string = "./config-schema.json") {
         this.configManager = new ConfigManager(configPath, configSchemaPath);
+        this.configManager.getConfig().then((config: any) => {
+            if (config.description != undefined) 
+                this.description = config.description;
+        }).catch((err) => {
+            // Error is already logged
+        });
 
         this.configUpdated(this.configManager.getConfigSync());
     }
